@@ -1,0 +1,97 @@
+import numpy as np
+import os
+
+configfile: "config/config.yaml"
+
+ROOT = os.path.abspath('.')
+EXPERIMENT = f"{ROOT}/experiments/{config['EXPERIMENT']}"
+
+SEED = config['SEED']
+EXON_SIZE = config['EXON_SIZE']
+NBR_EXON = config['NBR_EXON']
+NBR_SITES = EXON_SIZE * NBR_EXON
+
+print(EXPERIMENT)
+os.makedirs(EXPERIMENT,exist_ok=True)
+
+
+def copy_params(experiment, root, param_path):
+    new_path = "{0}/{1}".format(experiment,os.path.basename(param_path))
+    if not os.path.exists(new_path):
+        os.system('cp {0}/{1} {2}'.format(root,param_path,new_path))
+    return new_path
+
+
+NEWICK_PATH = copy_params(EXPERIMENT,ROOT,config['TREE'])
+MUTATION_MATRIX = copy_params(EXPERIMENT,ROOT,config['NUC_MATRIX']) if ('NUC_MATRIX' in config) and config['NUC_MATRIX'] else False
+PROFILE = copy_params(EXPERIMENT,ROOT,config['PROFILE']) if ('PROFILE' in config) and config['PROFILE'] else False
+#Parameters for the simulation
+SIMULATION_PARAMS = '--newick ' + NEWICK_PATH
+SIMULATION_PARAMS += ' --mutation_rate_per_generation {0}'.format(config['MUTATION_RATE_PER_GENERATION'])
+SIMULATION_PARAMS += ' --generation_time {0}'.format(1.0)
+SIMULATION_PARAMS += ' --unused_root_age'
+SIMULATION_PARAMS += ' --exon_size {0}'.format(EXON_SIZE)
+SIMULATION_PARAMS += ' --branch_wise_correlation'
+SIMULATION_PARAMS += ' --fix_pop_size'
+SIMULATION_PARAMS += ' --fix_mut_rate'
+SIMULATION_PARAMS += ' --fix_gen_time'
+
+replicates_array = list(range(1,config['REPLICATES'] + 1))
+
+alpha_array = ["{0:3f}".format(i) for i in
+               np.logspace(np.log10(config['ALPHA_ARRAY_MIN']),np.log10(config['ALPHA_ARRAY_MAX']),
+                   config['ALPHA_ARRAY_STEPS'])]
+for alpha in alpha_array:
+    os.makedirs(EXPERIMENT + "/" + alpha,exist_ok=True)
+
+localrules: all,create_profile,generate_matrix,plot_simulations
+
+rule all:
+    input:
+        EXPERIMENT + '/plot_simulation'
+
+
+if PROFILE:
+    rule create_profile:
+        output: EXPERIMENT + '/{alpha}_profile.prefs'
+        input: ROOT + "/scripts/extend_profile.py"
+        params:
+            alpha=lambda w: "--relative {0}".format(w.alpha)
+        shell: 'python3 {input} --input {PROFILE} --relative_pop_size {wildcards.alpha} --nbr_exons {NBR_EXON} --output {output}'
+else:
+    rule create_profile:
+        output: EXPERIMENT + '/{alpha}_profile.prefs'
+        input: ROOT + "/scripts/generate_profile.py"
+        shell: 'python3 {input} --alpha {wildcards.alpha} --nbr_sites {NBR_SITES} --output {output}'
+
+rule generate_matrix:
+    output: EXPERIMENT + '/{mut_bias}_matrix.tsv'
+    input:
+        exec=ROOT + "/scripts/generate_matrix.py"
+    params:
+        mut_bias=lambda w: "--lambda {0}".format(w.mut_bias)
+    shell: 'python3 {input.exec} {params.mut_bias} --output {output}'
+
+rule run_simulation:
+    output: touch(EXPERIMENT + '/{alpha}/{mut_bias}_{replicates}_exp')
+    input:
+        exec=f"{ROOT}/SimuEvol/build/SimuProfile",
+        prefs=rules.create_profile.output,
+        matrix=MUTATION_MATRIX if MUTATION_MATRIX else rules.generate_matrix.output
+    params:
+        time="0-4:00",mem=1000,threads=1,
+        seed=lambda w: int(w.replicates) * 10 ** 3
+    benchmark: EXPERIMENT + "/benchmarks/exp_{alpha}_{mut_bias}_{replicates}.tsv"
+    log:
+        out=EXPERIMENT + '/std/exp_{alpha}_{mut_bias}_{replicates}.stdout',
+        err=EXPERIMENT + '/std/exp_{alpha}_{mut_bias}_{replicates}.stderr'
+    shell: '{input.exec} {SIMULATION_PARAMS} --seed {params.seed} --nuc_matrix {input.matrix} --preferences {input.prefs} --output {output} 2> {log.err} 1> {log.out}'
+
+rule plot_simulations:
+    output: directory(EXPERIMENT + '/plot_simulation')
+    input:
+        src=ROOT + "/scripts/stat_simulated.py",
+        exp=expand(rules.run_simulation.output,alpha=alpha_array,mut_bias=1.0,replicates=replicates_array)
+    params:
+        exp=lambda w: expand(EXPERIMENT + '/{alpha}/{mut_bias}',alpha=alpha_array,mut_bias=1.0)
+    shell: 'mkdir -p {output} && python3 {input.src} --input {params.exp} --output {output}'

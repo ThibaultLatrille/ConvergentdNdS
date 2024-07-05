@@ -1,0 +1,12 @@
+EXPERIMENT: "OrthoMam"
+TREE: data/trees/rootedtree.OrthoMam.nhx
+MUTATION_RATE_PER_GENERATION: 1.0
+PROFILE: data/preferences/np.prefs
+NUC_MATRIX: data/matrices/nuc_matrix_Simiiformes_MF.tsv
+EXON_SIZE: 498
+NBR_EXON: 10
+SEED: 42
+ALPHA_ARRAY_MIN: 0.1
+ALPHA_ARRAY_MAX: 10
+ALPHA_ARRAY_STEPS: 5
+REPLICATES: 1
