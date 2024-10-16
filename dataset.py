@@ -12,6 +12,7 @@ shutil.rmtree('dataset', ignore_errors=True)
 os.makedirs('dataset', exist_ok=True)
 shutil.copy("data/trees/rootedtree.OrthoMam.nhx", "dataset/rootedtree.OrthoMam.nhx")
 
+np.random.seed(42)
 random_set = set()
 if __name__ == '__main__':
     # Find all the fasta files in the directory experiments/*/*/*.fasta
@@ -19,7 +20,8 @@ if __name__ == '__main__':
     outdict = defaultdict(list)
     for fasta_file in fasta_files:
         print(fasta_file)
-        exp, lambda_value, replicate = fasta_file.split('/')[1:]
+        exp, alpha_fixpop_value, replicate = fasta_file.split('/')[1:]
+        alpha, fixpop = alpha_fixpop_value.split('_')
         # Generate a random integer
         random_int = np.random.randint(1e3, 1e9)
         while random_int in random_set:
@@ -30,8 +32,10 @@ if __name__ == '__main__':
         # copy the file to the new file name
         shutil.copy(fasta_file, new_file_name)
         outdict["experiment"].append(exp)
-        outdict["lambda"].append(lambda_value)
+        outdict["PopSizeRelative"].append(alpha)
+        outdict["FixPopSize"].append(fixpop)
         outdict["key"].append(random_int)
 
     df = pd.DataFrame(outdict)
+    df.sort_values(by=["experiment", "PopSizeRelative", "FixPopSize"], inplace=True)
     df.to_csv('dataset/dataset.csv', index=False)

@@ -2,6 +2,10 @@ EXPERIMENT: "Mammals498SitesHighMut"
 TREE: data/trees/rootedtree.OrthoMam.nhx
 MUTATION_RATE_PER_GENERATION: 2.0
 NUC_MATRIX: data/matrices/nuc_matrix_Simiiformes_MF.tsv
+PRECISION_MATRIX:
+  fast: data/matrices/precision_half.tsv
+  change: data//matrices/precision_one.tsv
+  slow: data/matrices/precision_twice.tsv
 EXON_SIZE: 498
 NBR_EXON: 1
 SEED: 42

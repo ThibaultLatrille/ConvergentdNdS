@@ -10,7 +10,7 @@ sudo apt install -qq -y make cmake clang
 ```
 In the root folder of **ConvergentdNdS**, clone and compile the C++ code for *SimuEvol*
 ```
-git clone https://github.com/ThibaultLatrille/SimuEvol && cd SimuEvol && make release && cd ..
+git clone https://github.com/ThibaultLatrille/SimuEvol && cd SimuEvol && make tiny && cd ..
 ```
 
 ## Replicate experiments
@@ -29,4 +29,4 @@ for EXPERIMENT in config/Mammals*.yaml; do
 done
 ```
 
-Running the script `dataset.py` will create a folder `dataset` containing the alignments (in fasta format), the tree used to generate the simulations (`rootedtree.OrthoMam.nhx`), and a `dataset.csv` table which contains the relationships between the name of the fasta and the parameters that were used for the simulations
+Running the script `dataset.py` will create a folder `dataset` containing the alignments (in fasta format), the tree used to generate the simulations (`rootedtree.OrthoMam.nhx`), and a `dataset.csv` table which contains the relationships between the name of the fasta and the parameters that were used for the simulations.

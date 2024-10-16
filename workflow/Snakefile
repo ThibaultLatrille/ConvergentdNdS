@@ -23,7 +23,10 @@ def copy_params(experiment, root, param_path):
 
 
 NEWICK_PATH = copy_params(EXPERIMENT,ROOT,config['TREE'])
-MUTATION_MATRIX = copy_params(EXPERIMENT,ROOT,config['NUC_MATRIX']) if ('NUC_MATRIX' in config) and config['NUC_MATRIX'] else False
+MUTATION_MATRIX = copy_params(EXPERIMENT,ROOT,config['NUC_MATRIX'])
+DICO_PREC_MATRIX = {}
+for key, val in config['PRECISION_MATRIX'].items():
+    DICO_PREC_MATRIX[key] = copy_params(EXPERIMENT,ROOT,val)
 PROFILE = copy_params(EXPERIMENT,ROOT,config['PROFILE']) if ('PROFILE' in config) and config['PROFILE'] else False
 #Parameters for the simulation
 SIMULATION_PARAMS = '--newick ' + NEWICK_PATH
@@ -31,24 +34,20 @@ SIMULATION_PARAMS += ' --mutation_rate_per_generation {0}'.format(config['MUTATI
 SIMULATION_PARAMS += ' --generation_time {0}'.format(1.0)
 SIMULATION_PARAMS += ' --unused_root_age'
 SIMULATION_PARAMS += ' --exon_size {0}'.format(EXON_SIZE)
-SIMULATION_PARAMS += ' --branch_wise_correlation'
-SIMULATION_PARAMS += ' --fix_pop_size'
-SIMULATION_PARAMS += ' --fix_mut_rate'
-SIMULATION_PARAMS += ' --fix_gen_time'
+SIMULATION_PARAMS += ' --gBGC 0.0 --fix_gBGC --fix_mut_rate --fix_gen_time'
 
 replicates_array = list(range(1,config['REPLICATES'] + 1))
+fix_pop_list = ["fixed"] + list(DICO_PREC_MATRIX.keys())
+alpha_min = np.log10(config['ALPHA_ARRAY_MIN'])
+alpha_max = np.log10(config['ALPHA_ARRAY_MAX'])
+alpha_array = ["{0:3f}".format(i) for i in np.logspace(alpha_min,alpha_max,config['ALPHA_ARRAY_STEPS'])]
 
-alpha_array = ["{0:3f}".format(i) for i in
-               np.logspace(np.log10(config['ALPHA_ARRAY_MIN']),np.log10(config['ALPHA_ARRAY_MAX']),
-                   config['ALPHA_ARRAY_STEPS'])]
-for alpha in alpha_array:
-    os.makedirs(EXPERIMENT + "/" + alpha,exist_ok=True)
-
-localrules: all,create_profile,generate_matrix,plot_simulations
+localrules: all,create_profile
 
 rule all:
     input:
-        EXPERIMENT + '/plot_simulation'
+        expand(EXPERIMENT + '/{alpha}_{fixpop}/{mut_bias}_{replicates}_exp',
+            alpha=alpha_array,mut_bias=1.0,replicates=replicates_array,fixpop=fix_pop_list)
 
 
 if PROFILE:
@@ -64,34 +63,18 @@ else:
         input: ROOT + "/scripts/generate_profile.py"
         shell: 'python3 {input} --alpha {wildcards.alpha} --nbr_sites {NBR_SITES} --output {output}'
 
-rule generate_matrix:
-    output: EXPERIMENT + '/{mut_bias}_matrix.tsv'
-    input:
-        exec=ROOT + "/scripts/generate_matrix.py"
-    params:
-        mut_bias=lambda w: "--lambda {0}".format(w.mut_bias)
-    shell: 'python3 {input.exec} {params.mut_bias} --output {output}'
-
 rule run_simulation:
-    output: touch(EXPERIMENT + '/{alpha}/{mut_bias}_{replicates}_exp')
+    output: touch(EXPERIMENT + '/{alpha}_{fixpop}/{mut_bias}_{replicates}_exp')
     input:
         exec=f"{ROOT}/SimuEvol/build/SimuProfile",
         prefs=rules.create_profile.output,
-        matrix=MUTATION_MATRIX if MUTATION_MATRIX else rules.generate_matrix.output
+        matrix=MUTATION_MATRIX
     params:
         time="0-4:00",mem=1000,threads=1,
-        seed=lambda w: int(w.replicates) * 10 ** 3
-    benchmark: EXPERIMENT + "/benchmarks/exp_{alpha}_{mut_bias}_{replicates}.tsv"
+        seed=lambda w: int(w.replicates) * 10 ** 3,
+        fixpop=lambda w: ' --fix_pop_size' if w.fixpop == "fixed" else f' --nbr_grid_step 100 --precision_matrix {DICO_PREC_MATRIX[w.fixpop]}',
+    benchmark: EXPERIMENT + "/benchmarks/exp_{fixpop}_{alpha}_{mut_bias}_{replicates}.tsv"
     log:
-        out=EXPERIMENT + '/std/exp_{alpha}_{mut_bias}_{replicates}.stdout',
-        err=EXPERIMENT + '/std/exp_{alpha}_{mut_bias}_{replicates}.stderr'
-    shell: '{input.exec} {SIMULATION_PARAMS} --seed {params.seed} --nuc_matrix {input.matrix} --preferences {input.prefs} --output {output} 2> {log.err} 1> {log.out}'
-
-rule plot_simulations:
-    output: directory(EXPERIMENT + '/plot_simulation')
-    input:
-        src=ROOT + "/scripts/stat_simulated.py",
-        exp=expand(rules.run_simulation.output,alpha=alpha_array,mut_bias=1.0,replicates=replicates_array)
-    params:
-        exp=lambda w: expand(EXPERIMENT + '/{alpha}/{mut_bias}',alpha=alpha_array,mut_bias=1.0)
-    shell: 'mkdir -p {output} && python3 {input.src} --input {params.exp} --output {output}'
+        out=EXPERIMENT + '/std/exp_{fixpop}_{alpha}_{mut_bias}_{replicates}.stdout',
+        err=EXPERIMENT + '/std/exp_{fixpop}_{alpha}_{mut_bias}_{replicates}.stderr'
+    shell: '{input.exec} {SIMULATION_PARAMS} {params.fixpop} --seed {params.seed} --nuc_matrix {input.matrix} --preferences {input.prefs} --output {output} 2> {log.err} 1> {log.out}'
